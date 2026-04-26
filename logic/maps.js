@@ -71,6 +71,42 @@ const reverseRouteStops = [
   },
 ];
 
+const BUS_MOCKS = [
+  {
+    id: "bus-01",
+    label: "Bus Linus 1",
+    plat: "BK 1423 USU",
+    statusKey: "sedang_berjalan",
+    statusLabel: "Sedang Berjalan",
+    tujuan: "Halte FMIPA",
+    startRoute: "forward",
+    startStop: "Halte Pintu 4",
+    followMap: true,
+  },
+  {
+    id: "bus-02",
+    label: "Bus Linus 2",
+    plat: "BK 1524 USU",
+    statusKey: "menuju_halte",
+    statusLabel: "Menuju Halte",
+    tujuan: "Halte Pintu Sumber/Hukum",
+    startRoute: "reverse",
+    startStop: "Halte Pintu 1",
+    followMap: false,
+  },
+  {
+    id: "bus-03",
+    label: "Bus Linus 3",
+    plat: "BK 1625 USU",
+    statusKey: "sedang_berhenti",
+    statusLabel: "Sedang Berhenti",
+    tujuan: "Halte FISIP",
+    startRoute: "reverse",
+    startStop: "Halte FISIP",
+    followMap: false,
+  },
+];
+
 const errorElement = document.getElementById("map-error");
 let map;
 let AdvancedMarkerElement;
@@ -98,6 +134,19 @@ function getMapId() {
   )?.content;
   const globalMapId = window.GOOGLE_MAPS_MAP_ID;
   return queryMapId || metaMapId || globalMapId || DEFAULT_MAP_ID;
+}
+
+function getMapMode() {
+  const mode = new URLSearchParams(window.location.search).get("mode");
+  return mode === "detail" ? "detail" : "default";
+}
+
+function getBusIdFromQuery() {
+  return new URLSearchParams(window.location.search).get("bus_id") || "";
+}
+
+function getBusById(busId) {
+  return BUS_MOCKS.find((bus) => bus.id === busId) || null;
 }
 
 function pause(ms) {
@@ -317,6 +366,16 @@ function drawRoutePolyline(path, color) {
   });
 }
 
+function findStopPositionByName(stopName) {
+  const combined = [...forwardRouteStops, ...reverseRouteStops];
+  const matched = combined.find((stop) => stop.name === stopName);
+  return matched ? matched.position : forwardRouteStops[0].position;
+}
+
+function resolveBusStartPosition(bus) {
+  return findStopPositionByName(bus.startStop);
+}
+
 function createBusImage() {
   const busImage = document.createElement("img");
   busImage.src = "../assets/location.png";
@@ -346,6 +405,19 @@ function createBusState({ title, startPosition, followMap = false }) {
     infoWindow: new google.maps.InfoWindow({ content: title }),
     followMap,
   };
+}
+
+function openBusInfoWindow(bus, busState) {
+  const content = `
+    <div style="font-size:13px;line-height:1.5;min-width:170px;">
+      <div style="font-weight:700;color:#0f172a;">${bus.label}</div>
+      <div style="color:#334155;">${bus.plat}</div>
+      <div style="margin-top:6px;"><b>Status:</b> ${bus.statusLabel}</div>
+      <div><b>Tujuan:</b> ${bus.tujuan}</div>
+    </div>
+  `;
+  busState.infoWindow.setContent(content);
+  busState.infoWindow.open({ map, anchor: busState.marker });
 }
 
 async function animateLeg(leg, busState) {
@@ -433,29 +505,48 @@ async function initMap() {
     );
     map.fitBounds(bounds, 40);
 
-    const busMain = createBusState({
-      title: "Bus Linus 1",
-      startPosition: forwardRouteStops[0].position,
-      followMap: true,
-    });
-    const busFromP1 = createBusState({
-      title: "Bus Linus 2",
-      startPosition: reverseRouteStops[0].position,
-      followMap: false,
-    });
-    const busFromFisip = createBusState({
-      title: "Bus Linus 3",
-      startPosition: reverseRouteStops[3].position,
-      followMap: false,
-    });
+    if (getMapMode() === "detail") {
+      const busId = getBusIdFromQuery();
+      const selectedBus = getBusById(busId);
 
-    runSimulation([forwardTrip.legs, reverseTrip.legs], busMain, 0);
-    runSimulation([reverseTrip.legs, forwardTrip.legs], busFromP1, 0);
-    runSimulation(
-      [reverseTrip.legs, forwardTrip.legs],
-      busFromFisip,
-      findLegStartIndex(reverseTrip.legs, "Halte FISIP"),
-    );
+      if (!selectedBus) {
+        showError(
+          "Bus detail tidak ditemukan. Kembali ke daftar Info Bus untuk memilih bus yang valid.",
+        );
+        return;
+      }
+
+      const detailBusState = createBusState({
+        title: `${selectedBus.label} (${selectedBus.plat})`,
+        startPosition: resolveBusStartPosition(selectedBus),
+        followMap: false,
+      });
+
+      map.setCenter(resolveBusStartPosition(selectedBus));
+      map.setZoom(16.3);
+      openBusInfoWindow(selectedBus, detailBusState);
+      return;
+    }
+
+    BUS_MOCKS.forEach((bus) => {
+      const startPosition = resolveBusStartPosition(bus);
+      const busState = createBusState({
+        title: `${bus.label} (${bus.plat})`,
+        startPosition,
+        followMap: bus.followMap,
+      });
+
+      const reverseFirst = bus.startRoute === "reverse";
+      const routeSequence = reverseFirst
+        ? [reverseTrip.legs, forwardTrip.legs]
+        : [forwardTrip.legs, reverseTrip.legs];
+      const initialLegs = reverseFirst ? reverseTrip.legs : forwardTrip.legs;
+      const startLegIndex = bus.startStop
+        ? findLegStartIndex(initialLegs, bus.startStop)
+        : 0;
+
+      runSimulation(routeSequence, busState, startLegIndex);
+    });
   } catch (error) {
     showError(`Gagal memuat rute: ${error.message}`);
   }
