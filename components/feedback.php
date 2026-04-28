@@ -1,46 +1,6 @@
 <?php
-$reviewFeed = [
-	[
-		'username' => 'Nadia Putri',
-		'rating' => 5,
-		'comment' => 'Perjalanan pagi ini nyaman banget. Bus datang tepat waktu, AC dingin, dan rutenya jelas.',
-		'date' => '2026-04-25 07:20:00',
-		'bus_label' => 'Bus 01',
-		'route_label' => 'Pintu 4 -> FMIPA',
-	],
-	[
-		'username' => 'Reza Syahputra',
-		'rating' => 4,
-		'comment' => 'Sudah lebih tertib dari minggu lalu. Semoga informasi halte update-nya makin cepat.',
-		'date' => '2026-04-24 16:05:00',
-		'bus_label' => 'Bus 02',
-		'route_label' => 'FISIP -> Perpustakaan',
-	],
-	[
-		'username' => 'Maya Lestari',
-		'rating' => 3,
-		'comment' => '',
-		'date' => '2026-04-23 12:10:00',
-		'bus_label' => 'Bus 03',
-		'route_label' => '',
-	],
-	[
-		'username' => 'Fajar Ramadhan',
-		'rating' => 2,
-		'comment' => 'Jam pulang agak padat, tapi supirnya tetap membantu penumpang lansia saat turun.',
-		'date' => '2026-04-22 17:40:00',
-		'bus_label' => '',
-		'route_label' => 'Teknik -> Gerbang Utama',
-	],
-	[
-		'username' => 'Siti Amalia',
-		'rating' => 1,
-		'comment' => 'Antrian di halte lama bergerak, semoga jadwal antar-bus bisa lebih rapat.',
-		'date' => '2026-04-21 08:55:00',
-		'bus_label' => 'Bus 01',
-		'route_label' => 'FEB -> Hukum',
-	],
-];
+require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../logic/feedback.php';
 
 $ratingFilterOptions = [
 	'all' => 'Semua Rating',
@@ -81,6 +41,7 @@ $formStatus = [
 	'error' => '',
 ];
 
+
 $formInput = [
 	'username' => '',
 	'rating' => '5',
@@ -96,21 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_review'])) {
 	$formInput['route_label'] = trim((string) ($_POST['route_label'] ?? ''));
 	$formInput['comment'] = trim((string) ($_POST['comment'] ?? ''));
 
-	$validatedRating = (int) $formInput['rating'];
-	$validatedRating = max(1, min(5, $validatedRating));
-
-	if ($formInput['username'] === '') {
-		$formStatus['error'] = 'Nama penumpang wajib diisi sebelum mengirim review.';
+	$saveResult = feedback_insert_review($conn, $formInput);
+	if (!$saveResult['ok']) {
+		$formStatus['error'] = $saveResult['error'];
 	} else {
-		array_unshift($reviewFeed, [
-			'username' => $formInput['username'],
-			'rating' => $validatedRating,
-			'comment' => $formInput['comment'],
-			'date' => date('Y-m-d H:i:s'),
-			'bus_label' => $formInput['bus_label'],
-			'route_label' => $formInput['route_label'],
-		]);
-
 		$formStatus['submitted'] = true;
 		$formInput = [
 			'username' => '',
@@ -177,6 +127,7 @@ if (!function_exists('feedbackDisplayDate')) {
 	}
 }
 
+$reviewFeed = feedback_fetch_reviews($conn, $selectedFilter, $selectedSort);
 $emptyCommentFallback = 'Pengguna belum menulis komentar detail untuk perjalanan ini.';
 $hasReviews = count($reviewFeed) > 0;
 ?>
@@ -201,100 +152,95 @@ $hasReviews = count($reviewFeed) > 0;
 		</header>
 
 		<section class="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm md:p-5" aria-label="Form review penumpang">
-<div class="mb-4">
-<h2 class="text-base font-semibold text-zinc-900 md:text-lg">Tulis Review Perjalanan</h2>
-<p class="text-xs text-zinc-500 md:text-sm">Review akan muncul di feed sebagai simulasi (belum tersimpan ke database).</p>
-</div>
+			<div class="mb-4">
+				<h2 class="text-base font-semibold text-zinc-900 md:text-lg">Tulis Review Perjalanan</h2>
+				<p class="text-xs text-zinc-500 md:text-sm">Review tersimpan ke database dan langsung tampil di feed.</p>
+			</div>
 
-<?php if ($formStatus['submitted']): ?>
-<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-Review berhasil ditambahkan ke feed (dummy state).
-</div>
-<?php endif; ?>
+			<?php if ($formStatus['submitted']): ?>
+				<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+					Review berhasil ditambahkan ke feed.
+				</div>
+			<?php endif; ?>
 
-<?php if ($formStatus['error'] !== ''): ?>
-<div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-<?= feedbackSafeText($formStatus['error']) ?>
-</div>
-<?php endif; ?>
+			<?php if ($formStatus['error'] !== ''): ?>
+				<div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+					<?= feedbackSafeText($formStatus['error']) ?>
+				</div>
+			<?php endif; ?>
 
-<form method="post" class="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="Form kirim review">
-<label class="block">
-<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Nama Penumpang</span>
-<input
-type="text"
-name="username"
-value="<?= feedbackSafeText($formInput['username']) ?>"
-placeholder="Contoh: Dita Rahma"
-class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
->
-</label>
+			<form method="post" class="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="Form kirim review">
+				<label class="block">
+					<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Nama Penumpang</span>
+					<input
+						type="text"
+						name="username"
+						value="<?= feedbackSafeText($formInput['username']) ?>"
+						placeholder="Contoh: Dita Rahma"
+						class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">
+				</label>
 
-<label class="block">
-<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Rating</span>
-<select
-name="rating"
-class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
->
-<?php for ($optionRating = 5; $optionRating >= 1; $optionRating--): ?>
-<?php $optionValue = (string) $optionRating; ?>
-<option value="<?= $optionValue ?>" <?= $formInput['rating'] === $optionValue ? 'selected' : '' ?>>
-<?= $optionRating ?> Bintang
-</option>
-<?php endfor; ?>
-</select>
-</label>
+				<label class="block">
+					<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Rating</span>
+					<select
+						name="rating"
+						class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">
+						<?php for ($optionRating = 5; $optionRating >= 1; $optionRating--): ?>
+							<?php $optionValue = (string) $optionRating; ?>
+							<option value="<?= $optionValue ?>" <?= $formInput['rating'] === $optionValue ? 'selected' : '' ?>>
+								<?= $optionRating ?> Bintang
+							</option>
+						<?php endfor; ?>
+					</select>
+				</label>
 
-<label class="block">
-<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Label Bus (Opsional)</span>
-<input
-type="text"
-name="bus_label"
-value="<?= feedbackSafeText($formInput['bus_label']) ?>"
-placeholder="Contoh: Bus 02"
-class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
->
-</label>
+				<label class="block">
+					<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Label Bus (Opsional)</span>
+					<input
+						type="text"
+						name="bus_label"
+						value="<?= feedbackSafeText($formInput['bus_label']) ?>"
+						placeholder="Contoh: Bus 02"
+						class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">
+				</label>
 
-<label class="block">
-<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Rute (Opsional)</span>
-<input
-type="text"
-name="route_label"
-value="<?= feedbackSafeText($formInput['route_label']) ?>"
-placeholder="Contoh: FMIPA -> Perpustakaan"
-class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
->
-</label>
+				<label class="block">
+					<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Rute (Opsional)</span>
+					<input
+						type="text"
+						name="route_label"
+						value="<?= feedbackSafeText($formInput['route_label']) ?>"
+						placeholder="Contoh: FMIPA -> Perpustakaan"
+						class="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100">
+				</label>
 
-<label class="block md:col-span-2">
-<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Komentar</span>
-<textarea
-name="comment"
-rows="4"
-placeholder="Ceritakan pengalaman perjalanan kamu..."
-class="w-full resize-y rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-><?= feedbackSafeText($formInput['comment']) ?></textarea>
-</label>
+				<label class="block md:col-span-2">
+					<span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Komentar</span>
+					<textarea
+						name="comment"
+						rows="4"
+						placeholder="Ceritakan pengalaman perjalanan kamu..."
+						class="w-full resize-y rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"><?= feedbackSafeText($formInput['comment']) ?></textarea>
+				</label>
 
-<div class="md:col-span-2">
-<button
-type="submit"
-name="submit_review"
-value="1"
-class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
->
-Kirim Review
-</button>
-</div>
-</form>
-</section>
+				<div class="md:col-span-2">
+					<button
+						type="submit"
+						name="submit_review"
+						value="1"
+						class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700">
+						Kirim Review
+					</button>
+				</div>
+			</form>
+		</section>
 
-	<section class="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm md:p-5" aria-label="Kontrol review">
+		<section class="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm md:p-5" aria-label="Kontrol review">
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto] md:items-center">
 				<div>
 					<p class="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Filter Rating</p>
-					<div class="flex flex-wrap gap-2">
+					<form method="get" class="flex flex-wrap gap-2">
+						<input type="hidden" name="sort" value="<?= feedbackSafeText($selectedSort) ?>">
 						<?php foreach ($ratingFilterOptions as $optionValue => $optionLabel): ?>
 							<?php
 							$isActiveFilter = ($selectedFilter === $optionValue);
@@ -303,37 +249,41 @@ Kirim Review
 								: 'bg-zinc-50 text-zinc-700 border-zinc-300 hover:bg-zinc-100';
 							?>
 							<button
-								type="button"
+								type="submit"
+								name="rating"
+								value="<?= feedbackSafeText($optionValue) ?>"
 								class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition <?= $filterClass ?>"
-								aria-pressed="<?= $isActiveFilter ? 'true' : 'false' ?>"
-							>
+								aria-pressed="<?= $isActiveFilter ? 'true' : 'false' ?>">
 								<?= feedbackSafeText($optionLabel) ?>
 							</button>
 						<?php endforeach; ?>
-					</div>
+					</form>
 				</div>
 
 				<div class="md:min-w-52">
-					<label class="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Urutkan</label>
-					<div class="relative">
-						<select
-							name="sort"
-							class="w-full appearance-none rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-							aria-label="Urutkan review"
-						>
-							<?php foreach ($sortOptions as $sortValue => $sortLabel): ?>
-								<option value="<?= feedbackSafeText($sortValue) ?>" <?= $selectedSort === $sortValue ? 'selected' : '' ?>>
-									<?= feedbackSafeText($sortLabel) ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-						<span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">&#9662;</span>
-					</div>
+					<form method="get">
+						<input type="hidden" name="rating" value="<?= feedbackSafeText($selectedFilter) ?>">
+						<label class="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Urutkan</label>
+						<div class="relative">
+							<select
+								name="sort"
+								class="w-full appearance-none rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+								aria-label="Urutkan review">
+								<?php foreach ($sortOptions as $sortValue => $sortLabel): ?>
+									<option value="<?= feedbackSafeText($sortValue) ?>" <?= $selectedSort === $sortValue ? 'selected' : '' ?>>
+										<?= feedbackSafeText($sortLabel) ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">&#9662;</span>
+						</div>
+						<button
+							type="submit"
+							class="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-emerald-600 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50">
+							Terapkan
+						</button>
+					</form>
 				</div>
-			</div>
-
-			<div class="mt-4 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
-				<span class="font-semibold text-zinc-600">UI Placeholder:</span> filter/sort belum terhubung ke query backend.
 			</div>
 		</section>
 
@@ -407,5 +357,3 @@ Kirim Review
 		<?php endif; ?>
 	</div>
 </section>
-
-
