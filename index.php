@@ -81,6 +81,7 @@ $currentPage = $routeKey ?? 'dashboard';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Linus Express - Universitas Sumatera Utara</title>
     <link rel="stylesheet" href="src/output.css">
+    <link rel="icon" type="image/png" href="./assets/logo.png">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
 
