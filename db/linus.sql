@@ -102,7 +102,10 @@ CREATE TABLE `operasional` (
   `id_supir` int NOT NULL,
   `lokasi` text COLLATE utf8mb4_general_ci NOT NULL,
   `mulai` time NOT NULL,
-  `selesai` time NOT NULL
+  `selesai` time NOT NULL,
+  `status` enum('aktif','selesai','batal') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'aktif',
+  `start_at` datetime DEFAULT NULL,
+  `end_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -117,23 +120,59 @@ INSERT INTO `operasional` (`id_operasional`, `id_bus`, `id_supir`, `lokasi`, `mu
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `bus_location`
+--
+
+CREATE TABLE `bus_location` (
+  `id_bus` int NOT NULL,
+  `lat` decimal(10,7) NOT NULL,
+  `lng` decimal(10,7) NOT NULL,
+  `speed_kmh` decimal(6,2) DEFAULT NULL,
+  `heading_deg` smallint DEFAULT NULL,
+  `accuracy_m` decimal(6,2) DEFAULT NULL,
+  `recorded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `bus_location_log`
+--
+
+CREATE TABLE `bus_location_log` (
+  `id_log` bigint NOT NULL,
+  `id_bus` int NOT NULL,
+  `lat` decimal(10,7) NOT NULL,
+  `lng` decimal(10,7) NOT NULL,
+  `speed_kmh` decimal(6,2) DEFAULT NULL,
+  `heading_deg` smallint DEFAULT NULL,
+  `accuracy_m` decimal(6,2) DEFAULT NULL,
+  `recorded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `source` enum('gps','manual','sim') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'gps'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `supir`
 --
 
 CREATE TABLE `supir` (
   `id_supir` int NOT NULL,
-  `nama_supir` varchar(50) COLLATE utf8mb4_general_ci NOT NULL
+  `nama_supir` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `username` varchar(50) COLLATE utf8mb4_general_ci NOT NULL,
+  `password` varchar(255) COLLATE utf8mb4_general_ci NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `supir`
 --
 
-INSERT INTO `supir` (`id_supir`, `nama_supir`) VALUES
-(1, 'Sucipto'),
-(2, 'Sultansyah'),
-(3, 'Hadi'),
-(4, 'Yazid');
+INSERT INTO `supir` (`id_supir`, `nama_supir`, `username`, `password`) VALUES
+(1, 'Sucipto', 'sucipto', '12345'),
+(2, 'Sultansyah', 'sultansyah', '12345'),
+(3, 'Hadi', 'hadi', '12345'),
+(4, 'Yazid', 'yazid', '12345');
 
 -- --------------------------------------------------------
 
@@ -181,6 +220,19 @@ ALTER TABLE `feedback`
   ADD PRIMARY KEY (`id_feedback`);
 
 --
+-- Indexes for table `bus_location`
+--
+ALTER TABLE `bus_location`
+  ADD PRIMARY KEY (`id_bus`);
+
+--
+-- Indexes for table `bus_location_log`
+--
+ALTER TABLE `bus_location_log`
+  ADD PRIMARY KEY (`id_log`),
+  ADD KEY `idx_bus_time` (`id_bus`,`recorded_at`);
+
+--
 -- Indexes for table `operasional`
 --
 ALTER TABLE `operasional`
@@ -219,6 +271,12 @@ ALTER TABLE `bus`
 --
 ALTER TABLE `feedback`
   MODIFY `id_feedback` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `bus_location_log`
+--
+ALTER TABLE `bus_location_log`
+  MODIFY `id_log` bigint NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `operasional`

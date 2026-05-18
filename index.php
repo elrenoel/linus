@@ -19,7 +19,8 @@ function redirect_to(string $path): void
 $pageContent = [
     'dashboard' => 'components/map.php',
     'info_bus' => 'components/info_bus.php',
-    'feedback' => 'components/feedback.php'
+    'feedback' => 'components/feedback.php',
+    'driver' => 'components/driver.php'
 ];
 
 $routeMap = [
@@ -29,6 +30,9 @@ $routeMap = [
     '/dashboard' => 'dashboard',
     '/bus-info' => 'info_bus',
     '/feedback' => 'feedback',
+    '/driver' => 'driver',
+    '/driver-login' => 'driver_login',
+    '/driver-logout' => 'driver_logout',
     '/logout' => 'logout'
 ];
 
@@ -43,9 +47,15 @@ if ($path === '//') {
 
 $routeKey = $routeMap[$path] ?? null;
 $isLoggedIn = !empty($_SESSION['is_logged_in']);
+$isDriverLoggedIn = !empty($_SESSION['driver_logged_in']);
 
 if ($routeKey === 'logout') {
     require __DIR__ . '/logic/auth_logout.php';
+    exit;
+}
+
+if ($routeKey === 'driver_logout') {
+    require __DIR__ . '/logic/driver_auth_logout.php';
     exit;
 }
 
@@ -53,13 +63,20 @@ if ($routeKey === 'root' || $routeKey === null) {
     redirect_to($isLoggedIn ? '/dashboard' : '/login');
 }
 
-if (!$isLoggedIn) {
-    if ($routeKey !== 'login' && $routeKey !== 'register') {
-        redirect_to('/login');
+$driverRoutes = ['driver', 'driver_login', 'driver_logout'];
+if (in_array($routeKey, $driverRoutes, true)) {
+    if ($routeKey === 'driver' && !$isDriverLoggedIn) {
+        redirect_to('/driver-login');
     }
 } else {
-    if ($routeKey === 'login' || $routeKey === 'register') {
-        redirect_to('/dashboard');
+    if (!$isLoggedIn) {
+        if ($routeKey !== 'login' && $routeKey !== 'register') {
+            redirect_to('/login');
+        }
+    } else {
+        if ($routeKey === 'login' || $routeKey === 'register') {
+            redirect_to('/dashboard');
+        }
     }
 }
 
@@ -92,7 +109,13 @@ $currentPage = $routeKey ?? 'dashboard';
 </head>
 
 <body class="h-full flex flex-col overflow-hidden">
-    <?php if ($isLoggedIn) : ?>
+    <?php if ($routeKey === 'driver') : ?>
+        <main class="h-full w-full overflow-auto">
+            <?php include $pageContent['driver']; ?>
+        </main>
+    <?php elseif ($routeKey === 'driver_login') : ?>
+        <?php include 'pages/driver_login.php'; ?>
+    <?php elseif ($isLoggedIn) : ?>
         <?php include 'components/navbar.php'; ?>
 
         <div class="flex flex-1 min-h-0">

@@ -1,6 +1,7 @@
-const WAIT_STOP_SECONDS = 10;
 const DEFAULT_GMAPS_API_KEY = "AIzaSyCM7oahEyYfzB-D8tV8uobtdMxzo71kr2I";
 const DEFAULT_MAP_ID = "DEMO_MAP_ID";
+const API_BASE_PATH = "../logic";
+const BUS_POLL_INTERVAL_MS = 2000;
 const forwardRouteStops = [
   {
     name: "Halte Pintu 4",
@@ -73,9 +74,9 @@ const reverseRouteStops = [
 
 const BUS_MOCKS = [
   {
-    id: "bus-01",
-    label: "Bus Linus 1",
-    plat: "BK 1423 USU",
+    id: 1,
+    label: "Linus 1",
+    plat: "",
     statusKey: "sedang_berjalan",
     statusLabel: "Sedang Berjalan",
     tujuan: "Halte FMIPA",
@@ -84,9 +85,9 @@ const BUS_MOCKS = [
     followMap: true,
   },
   {
-    id: "bus-02",
-    label: "Bus Linus 2",
-    plat: "BK 1524 USU",
+    id: 2,
+    label: "Linus 2",
+    plat: "",
     statusKey: "menuju_halte",
     statusLabel: "Menuju Halte",
     tujuan: "Halte Pintu Sumber/Hukum",
@@ -95,9 +96,9 @@ const BUS_MOCKS = [
     followMap: false,
   },
   {
-    id: "bus-03",
-    label: "Bus Linus 3",
-    plat: "BK 1625 USU",
+    id: 3,
+    label: "Linus 3",
+    plat: "",
     statusKey: "sedang_berhenti",
     statusLabel: "Sedang Berhenti",
     tujuan: "Halte FISIP",
@@ -110,6 +111,8 @@ const BUS_MOCKS = [
 const errorElement = document.getElementById("map-error");
 let map;
 let AdvancedMarkerElement;
+const busMarkers = new Map();
+let busPollerId = null;
 
 function showError(message) {
   errorElement.textContent = message;
@@ -145,12 +148,49 @@ function getBusIdFromQuery() {
   return new URLSearchParams(window.location.search).get("bus_id") || "";
 }
 
-function getBusById(busId) {
-  return BUS_MOCKS.find((bus) => bus.id === busId) || null;
+function createBusLabel(bus) {
+  return bus.label ? `Bus ${bus.label}` : `Bus ${bus.id}`;
 }
 
-function pause(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function normalizeBus(raw) {
+  return {
+    id: raw.id,
+    label: raw.label || "",
+    plat: raw.plat || "",
+    supir: raw.supir || "",
+    statusKey: raw.status_key || raw.statusKey || "sedang_berhenti",
+    statusLabel: raw.status_label || raw.statusLabel || "Sedang Berhenti",
+    tujuan: raw.tujuan || "-",
+    location: raw.location || null,
+    followMap: Boolean(raw.followMap),
+    startStop: raw.startStop || "",
+  };
+}
+
+async function fetchBusList() {
+  const response = await fetch(`${API_BASE_PATH}/api_bus_list.php`);
+  if (!response.ok) {
+    throw new Error(`HTTP_${response.status}`);
+  }
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(data.error || "Gagal memuat data bus.");
+  }
+  return Array.isArray(data.buses) ? data.buses.map(normalizeBus) : [];
+}
+
+async function fetchBusDetail(busId) {
+  const response = await fetch(
+    `${API_BASE_PATH}/api_bus_detail.php?bus_id=${encodeURIComponent(busId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP_${response.status}`);
+  }
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(data.error || "Gagal memuat detail bus.");
+  }
+  return normalizeBus(data.bus || {});
 }
 
 function toRad(value) {
@@ -376,6 +416,13 @@ function resolveBusStartPosition(bus) {
   return findStopPositionByName(bus.startStop);
 }
 
+function resolveBusPosition(bus) {
+  if (bus.location && Number.isFinite(bus.location.lat)) {
+    return bus.location;
+  }
+  return null;
+}
+
 function createBusImage() {
   const busImage = document.createElement("img");
   busImage.src = "../assets/location.png";
@@ -408,10 +455,11 @@ function createBusState({ title, startPosition, followMap = false }) {
 }
 
 function openBusInfoWindow(bus, busState) {
+  const title = createBusLabel(bus);
   const content = `
     <div style="font-size:13px;line-height:1.5;min-width:170px;">
-      <div style="font-weight:700;color:#0f172a;">${bus.label}</div>
-      <div style="color:#334155;">${bus.plat}</div>
+      <div style="font-weight:700;color:#0f172a;">${title}</div>
+      <div style="color:#334155;">${bus.plat || "-"}</div>
       <div style="margin-top:6px;"><b>Status:</b> ${bus.statusLabel}</div>
       <div><b>Tujuan:</b> ${bus.tujuan}</div>
     </div>
@@ -420,61 +468,44 @@ function openBusInfoWindow(bus, busState) {
   busState.infoWindow.open({ map, anchor: busState.marker });
 }
 
-async function animateLeg(leg, busState) {
-  const metrics = buildPathMetrics(
-    leg.path.length ? leg.path : [forwardRouteStops[0].position],
-  );
-  const durationMs = Math.max(leg.durationSec, 1) * 1000;
-  const startAt = performance.now();
-
-  busState.infoWindow.setContent(`Menuju ${leg.to} (${leg.durationText})`);
-  busState.infoWindow.open({ map, anchor: busState.marker });
-
-  return new Promise((resolve) => {
-    function step(now) {
-      const progress = Math.min((now - startAt) / durationMs, 1);
-      const traveled = metrics.totalDistance * progress;
-      const position = interpolatePosition(metrics, traveled);
-      busState.marker.position = position;
-
-      if (progress < 1) {
-        requestAnimationFrame(step);
-        return;
-      }
-
-      if (busState.followMap) {
-        map.panTo(position);
-      }
-      resolve();
-    }
-
-    requestAnimationFrame(step);
-  });
-}
-
-async function waitAtStop(stopName, busState) {
-  busState.infoWindow.setContent(
-    `Bus berhenti di: ${stopName} (${WAIT_STOP_SECONDS} detik)`,
-  );
-  busState.infoWindow.open({ map, anchor: busState.marker });
-  await pause(WAIT_STOP_SECONDS * 1000);
-}
-
-async function runSimulation(routeSequences, busState, startLegIndex = 0) {
-  let routeIndex = 0;
-  let legIndex = Math.max(0, startLegIndex);
-
-  while (true) {
-    const legs = routeSequences[routeIndex];
-    for (let i = legIndex; i < legs.length; i++) {
-      await waitAtStop(legs[i].from, busState);
-      await animateLeg(legs[i], busState);
-    }
-    await waitAtStop(legs[legs.length - 1].to, busState);
-
-    legIndex = 0;
-    routeIndex = (routeIndex + 1) % routeSequences.length;
+function ensureBusMarker(bus) {
+  const busId = String(bus.id);
+  let busState = busMarkers.get(busId);
+  if (!busState) {
+    busState = createBusState({
+      title: createBusLabel(bus),
+      startPosition: resolveBusPosition(bus),
+      followMap: bus.followMap,
+    });
+    busState.marker.addListener("gmp-click", () =>
+      openBusInfoWindow(bus, busState),
+    );
+    busMarkers.set(busId, busState);
   }
+
+  const position = resolveBusPosition(bus);
+  busState.marker.position = position;
+  busState.marker.title = createBusLabel(bus);
+  busState.followMap = bus.followMap;
+  if (busState.followMap) {
+    map.panTo(position);
+  }
+  return busState;
+}
+
+function syncBusMarkers(buses) {
+  const activeIds = new Set(buses.map((bus) => String(bus.id)));
+  for (const [busId, busState] of busMarkers.entries()) {
+    if (!activeIds.has(busId)) {
+      busState.infoWindow.close();
+      busState.marker.map = null;
+      busMarkers.delete(busId);
+    }
+  }
+
+  buses.forEach((bus) => {
+    ensureBusMarker(bus);
+  });
 }
 
 async function initMap() {
@@ -507,46 +538,47 @@ async function initMap() {
 
     if (getMapMode() === "detail") {
       const busId = getBusIdFromQuery();
-      const selectedBus = getBusById(busId);
-
-      if (!selectedBus) {
+      if (!busId) {
         showError(
           "Bus detail tidak ditemukan. Kembali ke daftar Info Bus untuk memilih bus yang valid.",
         );
         return;
       }
 
-      const detailBusState = createBusState({
-        title: `${selectedBus.label} (${selectedBus.plat})`,
-        startPosition: resolveBusStartPosition(selectedBus),
-        followMap: false,
-      });
+      const updateDetail = async () => {
+        try {
+          const selectedBus = await fetchBusDetail(busId);
+          selectedBus.followMap = true;
+          const detailBusState = ensureBusMarker(selectedBus);
+          openBusInfoWindow(selectedBus, detailBusState);
+          map.setCenter(resolveBusPosition(selectedBus));
+          map.setZoom(16.3);
+        } catch (error) {
+          showError(`Gagal memuat detail bus: ${error.message}`);
+        }
+      };
 
-      map.setCenter(resolveBusStartPosition(selectedBus));
-      map.setZoom(16.3);
-      openBusInfoWindow(selectedBus, detailBusState);
+      await updateDetail();
+      busPollerId = window.setInterval(updateDetail, BUS_POLL_INTERVAL_MS);
       return;
     }
 
-    BUS_MOCKS.forEach((bus) => {
-      const startPosition = resolveBusStartPosition(bus);
-      const busState = createBusState({
-        title: `${bus.label} (${bus.plat})`,
-        startPosition,
-        followMap: bus.followMap,
-      });
+    const updateDashboard = async () => {
+      try {
+        const buses = await fetchBusList();
+        if (buses.length === 0) {
+          syncBusMarkers(BUS_MOCKS.map(normalizeBus));
+          return;
+        }
+        syncBusMarkers(buses);
+      } catch (error) {
+        showError(`Gagal memuat bus: ${error.message}`);
+        syncBusMarkers(BUS_MOCKS.map(normalizeBus));
+      }
+    };
 
-      const reverseFirst = bus.startRoute === "reverse";
-      const routeSequence = reverseFirst
-        ? [reverseTrip.legs, forwardTrip.legs]
-        : [forwardTrip.legs, reverseTrip.legs];
-      const initialLegs = reverseFirst ? reverseTrip.legs : forwardTrip.legs;
-      const startLegIndex = bus.startStop
-        ? findLegStartIndex(initialLegs, bus.startStop)
-        : 0;
-
-      runSimulation(routeSequence, busState, startLegIndex);
-    });
+    await updateDashboard();
+    busPollerId = window.setInterval(updateDashboard, BUS_POLL_INTERVAL_MS);
   } catch (error) {
     showError(`Gagal memuat rute: ${error.message}`);
   }

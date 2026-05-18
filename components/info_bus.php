@@ -1,55 +1,33 @@
 <?php
-$mockBuses = [
-	[
-		'id' => 'bus-01',
-		'plat' => 'BK 1423 USU',
-		'supir' => 'Andi Saputra',
-		'status_key' => 'sedang_berjalan',
-		'status_label' => 'Sedang Berjalan',
-		'tujuan' => 'Halte FMIPA',
-	],
-	[
-		'id' => 'bus-02',
-		'plat' => 'BK 1524 USU',
-		'supir' => 'Budi Hartono',
-		'status_key' => 'menuju_halte',
-		'status_label' => 'Menuju Halte',
-		'tujuan' => 'Halte Pintu Sumber/Hukum',
-	],
-	[
-		'id' => 'bus-03',
-		'plat' => 'BK 1625 USU',
-		'supir' => 'Citra Lestari',
-		'status_key' => 'sedang_berhenti',
-		'status_label' => 'Sedang Berhenti',
-		'tujuan' => 'Halte FISIP',
-	],
-];
+require_once __DIR__ . '/../logic/bus_service.php';
+
+$busList = bus_fetch_all(bus_get_conn());
 
 $statusStyles = [
 	'sedang_berjalan' => 'text-emerald-700',
 	'menuju_halte' => 'text-amber-700',
 	'sedang_berhenti' => 'text-slate-700',
+	'tidak_aktif' => 'text-zinc-500',
 ];
 
 $statusDotStyles = [
 	'sedang_berjalan' => 'bg-emerald-600',
 	'menuju_halte' => 'bg-amber-500',
 	'sedang_berhenti' => 'bg-slate-500',
+	'tidak_aktif' => 'bg-zinc-400',
 ];
 
-$selectedBusId = $_GET['bus_id'] ?? '';
-$selectedBusId = preg_replace('/[^a-zA-Z0-9\-]/', '', $selectedBusId);
+$selectedBusId = isset($_GET['bus_id']) ? (int) $_GET['bus_id'] : 0;
 
 $selectedBus = null;
-foreach ($mockBuses as $bus) {
+foreach ($busList as $bus) {
 	if ($bus['id'] === $selectedBusId) {
 		$selectedBus = $bus;
 		break;
 	}
 }
 
-$totalBus = count($mockBuses);
+$totalBus = count($busList);
 $busAktif = $totalBus;
 $targetSlots = 4;
 $placeholderCount = max(0, $targetSlots - $totalBus);
@@ -63,18 +41,20 @@ $placeholderCount = max(0, $targetSlots - $totalBus);
 		</header>
 
 		<div class="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
-			<?php foreach ($mockBuses as $index => $bus): ?>
+			<?php foreach ($busList as $index => $bus): ?>
 				<?php
-				$isSelected = ($selectedBusId !== '' && $selectedBusId === $bus['id']);
+				$isSelected = ($selectedBusId > 0 && $selectedBusId === $bus['id']);
 				$statusClass = $statusStyles[$bus['status_key']] ?? 'text-zinc-700';
 				$statusDotClass = $statusDotStyles[$bus['status_key']] ?? 'bg-zinc-500';
-				$detailUrl = '?page=info_bus&bus_id=' . urlencode($bus['id']);
+				$detailUrl = '?page=info_bus&bus_id=' . urlencode((string) $bus['id']);
+				$busLabel = $bus['label'] ?: ('Bus ' . ($index + 1));
+				$busPlat = $bus['plat'] ?: '-';
 				?>
 				<article class="flex min-h-44 flex-col justify-between rounded-md border p-4 transition <?= $isSelected ? 'border-emerald-500 bg-emerald-50/40' : 'border-zinc-300 bg-zinc-100' ?>">
 					<div>
 						<div class="flex items-start justify-between gap-4">
-							<h2 class="text-3xl font-bold leading-none text-zinc-900 md:text-4xl">Bus <?= $index + 1 ?></h2>
-							<p class="text-sm font-semibold text-zinc-700"><?= htmlspecialchars($bus['plat'], ENT_QUOTES, 'UTF-8') ?></p>
+							<h2 class="text-3xl font-bold leading-none text-zinc-900 md:text-4xl"><?= htmlspecialchars($busLabel, ENT_QUOTES, 'UTF-8') ?></h2>
+							<p class="text-sm font-semibold text-zinc-700"><?= htmlspecialchars($busPlat, ENT_QUOTES, 'UTF-8') ?></p>
 						</div>
 						<div class="mt-3 flex items-center gap-2 text-sm font-semibold <?= $statusClass ?>">
 							<span class="h-2.5 w-2.5 rounded-full <?= $statusDotClass ?>"></span>
@@ -87,8 +67,7 @@ $placeholderCount = max(0, $targetSlots - $totalBus);
 					<div class="mt-4 flex justify-end">
 						<a
 							href="<?= $detailUrl ?>"
-							class="inline-flex items-center rounded-md border border-zinc-500 bg-white px-4 py-1.5 text-sm text-zinc-800 transition hover:bg-zinc-50"
-						>
+							class="inline-flex items-center rounded-md border border-zinc-500 bg-white px-4 py-1.5 text-sm text-zinc-800 transition hover:bg-zinc-50">
 							Lihat detail
 						</a>
 					</div>
@@ -100,7 +79,7 @@ $placeholderCount = max(0, $targetSlots - $totalBus);
 			<?php endfor; ?>
 		</div>
 
-		<?php if ($selectedBusId !== '' && $selectedBus === null): ?>
+		<?php if ($selectedBusId > 0 && $selectedBus === null): ?>
 			<section class="rounded-md border border-amber-300 bg-amber-50 p-5 text-amber-900">
 				<h3 class="text-lg font-bold">Bus tidak ditemukan</h3>
 				<p class="mt-2 text-sm md:text-base">
@@ -116,14 +95,16 @@ $placeholderCount = max(0, $targetSlots - $totalBus);
 			<?php
 			$selectedStatusClass = $statusStyles[$selectedBus['status_key']] ?? 'text-zinc-700';
 			$selectedStatusDotClass = $statusDotStyles[$selectedBus['status_key']] ?? 'bg-zinc-500';
-			$mapUrl = 'components/map.html?mode=detail&bus_id=' . urlencode($selectedBus['id']);
+			$mapUrl = 'components/map.html?mode=detail&bus_id=' . urlencode((string) $selectedBus['id']);
+			$selectedLabel = $selectedBus['label'] ?: 'Bus Linus';
+			$selectedPlat = $selectedBus['plat'] ?: '-';
 			?>
 			<section class="rounded-md border border-zinc-300 bg-white p-5">
 				<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 					<div>
 						<p class="text-sm font-medium uppercase tracking-wide text-zinc-500">Detail Bus Dipilih</p>
 						<h3 class="mt-1 text-xl font-bold text-zinc-900 md:text-2xl">
-							<?= htmlspecialchars($selectedBus['plat'], ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($selectedBus['supir'], ENT_QUOTES, 'UTF-8') ?>
+							<?= htmlspecialchars($selectedLabel, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($selectedPlat, ENT_QUOTES, 'UTF-8') ?>
 						</h3>
 						<p class="mt-1 text-sm text-zinc-700">
 							Halte tujuan saat ini: <span class="font-semibold text-zinc-900"><?= htmlspecialchars($selectedBus['tujuan'], ENT_QUOTES, 'UTF-8') ?></span>

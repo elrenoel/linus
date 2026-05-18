@@ -10,7 +10,7 @@ $currentPage = $currentPage ?? 'dashboard';
 ?>
 
 
-<div class="h-full flex w-fit">
+<div class="h-full hidden md:flex w-fit">
     <div class="border-r border-gray-300 w-64 p-5">
         <nav class="h-full pt-4">
             <ul class="flex flex-col gap-4">
